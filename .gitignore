@@ -1,0 +1,9 @@
+/Library
+/obj
+*.csproj
+/Logs
+/.vs
+/UserSettings
+/Packages
+gameoff2025.sln
+.vsconfig
