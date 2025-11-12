@@ -5,28 +5,27 @@ using UnityEngine;
 public class EnvObj : MonoBehaviour, IAbsorbable
 {
     public MagicType Typ;
-    void Start()
+    public SpriteRenderer spr;
+    public virtual void Start()
     {
-        
+        spr = GetComponent<SpriteRenderer>();
     }
 
-    public void OnParticleAbsorbed(MagicType type)
+    public virtual void OnParticleAbsorbed(MagicType type)
     {
 
     }
 
-    // Update is called once per frame
-    void Update()
+    public virtual void Absorb(MagicType typ, int cnt)
     {
-        
-    }
 
-    public void OnBlast(Vector2 pos, Quaternion direction, bool isCircle)
+    }
+    public virtual void OnBlast(Vector2 pos, Quaternion direction, bool isCircle)
     {
         var magic = Instantiate(BattleController.instance.MagicWave);
         magic.GetComponent<MagicController>().Init(pos, direction, Typ, isCircle ? 360 : 90, false, false, this.gameObject);
     }
-    public bool CanAbsorb(MagicType typ)
+    public virtual bool CanAbsorb(MagicType typ)
     {
         return true;
     }

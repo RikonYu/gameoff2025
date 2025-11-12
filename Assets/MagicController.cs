@@ -21,8 +21,6 @@ public class MagicController : MonoBehaviour
     public LayerMask EnvTriggerLayer;
     public LayerMask MagicInteractionLayer;
 
-    private const float MANUAL_GRAVITY = 9.81f;
-
     private List<ParticleSystem.Particle> triggerParticles;
     private ParticleSystem.Particle[] allParticles;
 
@@ -32,7 +30,8 @@ public class MagicController : MonoBehaviour
     private Dictionary<MagicController, int> magicHitsThisFrame;
     private static HashSet<long> interactionsProcessedThisFrame;
 
-    private bool hasHitTerrain;
+    private HashSet<uint> particlesHitTerrain;
+    private Dictionary<uint, ParticleSystem.Particle> previousParticles;
 
     void Awake()
     {
@@ -44,16 +43,15 @@ public class MagicController : MonoBehaviour
 
         psMain = ps.main;
         psShape = ps.shape;
-
-        psMain.simulationSpace = ParticleSystemSimulationSpace.World;
-
+    
         psMain.startSpeed = MoveSpeed;
-
-        psMain.gravityModifier = 0;
-        hasHitTerrain = false;
+        psMain.startLifetime = Consts.WaveLifetime;
 
         triggerParticles = new List<ParticleSystem.Particle>();
         allParticles = new ParticleSystem.Particle[psMain.maxParticles];
+
+        particlesHitTerrain = new HashSet<uint>();
+        previousParticles = new Dictionary<uint, ParticleSystem.Particle>();
 
         magicHitsThisFrame = new Dictionary<MagicController, int>();
         if (interactionsProcessedThisFrame == null)
@@ -66,6 +64,12 @@ public class MagicController : MonoBehaviour
     {
         this.transform.position = pos;
         this.Typ = typ;
+        psMain.startColor = Consts.ElementColors[typ];
+
+        psMain.maxParticles = degree * Consts.ParticlePerDegree;
+        ParticleSystem.Burst firstBurst = ps.emission.GetBurst(0);
+        firstBurst.count = psMain.maxParticles;
+        ps.emission.SetBurst(0, firstBurst);
         this.SetDegree(degree);
         gameObject.transform.rotation = direction;
         this.isAlly = isAlly;
@@ -76,7 +80,9 @@ public class MagicController : MonoBehaviour
         isstopped = false;
         lifetime = 0f;
 
-        hasHitTerrain = false;
+        particlesHitTerrain.Clear();
+        previousParticles.Clear();
+        psMain.gravityModifier = 0;
     }
 
     void SetDegree(int degree)
@@ -105,24 +111,78 @@ public class MagicController : MonoBehaviour
     bool once = false;
     void StopParticles()
     {
-        if (isstopped) return;
+/*        if (isstopped) return;
         isstopped = true;
-        once = true;
+        once = true;*/
     }
 
     void LateUpdate()
     {
-        if (once && !hasHitTerrain)
+        int numParticlesAlive = ps.GetParticles(allParticles);
+        bool particlesModified = false;
+        float dt = Time.deltaTime;
+
+        var currentFrameParticles = new Dictionary<uint, ParticleSystem.Particle>(numParticlesAlive);
+
+        for (int i = 0; i < numParticlesAlive; i++)
+        {
+            ParticleSystem.Particle p = allParticles[i];
+            if (p.remainingLifetime == 0) continue;
+
+            currentFrameParticles[p.randomSeed] = p;
+
+            if (previousParticles.TryGetValue(p.randomSeed, out var prevP))
+            {
+                float distanceSq = (p.position - prevP.position).sqrMagnitude;
+                float allowedDistance = prevP.velocity.magnitude * 1.5f * dt;
+                float allowedDistanceSq = allowedDistance * allowedDistance;
+
+                if (distanceSq > allowedDistanceSq)
+                {
+                    allParticles[i].remainingLifetime = 0;
+                    particlesModified = true;
+                }
+            }
+        }
+        previousParticles = currentFrameParticles;
+
+
+        if (once)
         {
             once = false;
-            int numParticlesAlive = ps.GetParticles(allParticles);
-
             for (int i = 0; i < numParticlesAlive; i++)
             {
-                allParticles[i].velocity = this.transform.up * MoveSpeed;
-            }
-            Debug.Log(this.transform.up * MoveSpeed);
+                if (allParticles[i].remainingLifetime == 0) continue;
 
+                if (particlesHitTerrain.Contains(allParticles[i].randomSeed))
+                {
+                    Vector3 vel = allParticles[i].velocity;
+                    allParticles[i].velocity = vel;
+                }
+                else
+                {
+                    allParticles[i].velocity = this.transform.up * MoveSpeed;
+                }
+            }
+            particlesModified = true;
+        }
+        else if (isstopped)
+        {
+            for (int i = 0; i < numParticlesAlive; i++)
+            {
+                if (allParticles[i].remainingLifetime == 0) continue;
+
+                if (particlesHitTerrain.Contains(allParticles[i].randomSeed))
+                {
+                    Vector3 vel = allParticles[i].velocity;
+                    allParticles[i].velocity = vel;
+                    particlesModified = true;
+                }
+            }
+        }
+
+        if (particlesModified)
+        {
             ps.SetParticles(allParticles, numParticlesAlive);
         }
 
@@ -132,13 +192,6 @@ public class MagicController : MonoBehaviour
 
     void OnParticleCollision(GameObject other)
     {
-        if (hasHitTerrain) return;
-
-        if (((1 << other.layer) & TerrainLayer.value) != 0)
-        {
-            hasHitTerrain = true;
-            psMain.gravityModifier = MANUAL_GRAVITY;
-        }
     }
 
     void OnParticleTrigger()
@@ -154,25 +207,35 @@ public class MagicController : MonoBehaviour
             Component hitComponent = enterColliderData.GetCollider(i, 0);
             int hitLayer = hitComponent.gameObject.layer;
 
-            bool absorbed = CheckAbsorptionLogic(hitComponent);
-            if (absorbed)
+            if (((1 << hitLayer) & TerrainLayer.value) != 0)
             {
-                p.remainingLifetime = 0;
-                particlesModified = true;
-            }
-            else if (((1 << hitLayer) & MagicInteractionLayer.value) != 0)
-            {
-                MagicController otherMagic = hitComponent.GetComponent<MagicController>();
-                if (otherMagic != null && otherMagic != this)
+                if (!particlesHitTerrain.Contains(p.randomSeed))
                 {
-                    if (!magicHitsThisFrame.ContainsKey(otherMagic))
-                    {
-                        magicHitsThisFrame[otherMagic] = 0;
-                    }
-                    magicHitsThisFrame[otherMagic]++;
-
+                    particlesHitTerrain.Add(p.randomSeed);
+                }
+            }
+            else
+            {
+                bool absorbed = CheckAbsorptionLogic(hitComponent);
+                if (absorbed)
+                {
                     p.remainingLifetime = 0;
                     particlesModified = true;
+                }
+                else if (((1 << hitLayer) & MagicInteractionLayer.value) != 0)
+                {
+                    MagicController otherMagic = hitComponent.GetComponent<MagicController>();
+                    if (otherMagic != null && otherMagic != this)
+                    {
+                        if (!magicHitsThisFrame.ContainsKey(otherMagic))
+                        {
+                            magicHitsThisFrame[otherMagic] = 0;
+                        }
+                        magicHitsThisFrame[otherMagic]++;
+
+                        p.remainingLifetime = 0;
+                        particlesModified = true;
+                    }
                 }
             }
 
@@ -265,9 +328,7 @@ public class MagicController : MonoBehaviour
         var sorted = distances.OrderBy(d => d.dist).Take(count);
 
         foreach (var particleInfo in sorted)
-        {
             allParticles[particleInfo.index].remainingLifetime = 0;
-        }
 
         ps.SetParticles(allParticles, numParticlesAlive);
     }
