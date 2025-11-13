@@ -46,4 +46,12 @@ public class Utils
         return true;
     }
 
+    public static bool SameColor(Color color1, Color color2)
+    {
+        float rDiff = color1.r - color2.r;
+        float gDiff = color1.g - color2.g;
+        float bDiff = color1.b - color2.b;
+        return Mathf.Sqrt(rDiff * rDiff + gDiff * gDiff + bDiff * bDiff)<=0.1f;
+    }
+
 }

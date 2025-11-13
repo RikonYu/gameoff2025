@@ -105,6 +105,8 @@ public class MagicController : MonoBehaviour
         {
             StopParticles();
         }
+        if (lifetime >= Consts.WaveLifetime)
+            Destroy(gameObject);
     }
 
     bool isstopped = false;

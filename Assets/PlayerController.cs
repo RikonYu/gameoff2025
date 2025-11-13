@@ -56,7 +56,7 @@ public class PlayerController : MonoBehaviour, IAbsorbable
                 var magic = Instantiate(BattleController.instance.MagicWave);
                 var pos = Camera.main.ScreenToWorldPoint(Input.mousePosition, 0f);
                 Quaternion direction = Quaternion.Euler(0f, 0f, Mathf.Atan2(pos.y, pos.x) * Mathf.Rad2Deg-90);
-                magic.GetComponent<MagicController>().Init(this.transform.position, direction, CurrentTyp, 90, true, false, this.gameObject);
+                magic.GetComponent<MagicController>().Init(this.transform.position, direction, BattleController.instance.CurrentMagic, 90, true, false, this.gameObject);
             }
         }
     }

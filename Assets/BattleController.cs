@@ -7,9 +7,11 @@ public class BattleController : MonoBehaviour
     public static BattleController instance;
     public GameObject MagicWave;
     public GameObject LeftWall, RightWall;
+    public MagicType CurrentMagic;
     // Start is called before the first frame update
     void Start()
     {
+        CurrentMagic = MagicType.WaterWave;
         Camera.main.orthographicSize = Consts.CameraSize;
         instance = this;
         LeftWall.transform.position = Vector3.left * (5f+Consts.CameraSize);
