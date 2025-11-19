@@ -41,9 +41,34 @@ public class Utils
         return false;
 
     }
-    public static bool IsCounter(MagicType A, MagicType B)
+    public static bool IsCounter(MagicType atk, MagicType def)
     {
-        return true;
+        if (atk == MagicType.WaterWave && def == MagicType.FireWave)
+            return true;
+        if (atk == MagicType.FireWave && def == MagicType.MetalWave)
+            return true;
+        if (atk == MagicType.MetalWave && def == MagicType.GrassWave)
+            return true;
+        if (atk == MagicType.GrassWave && def == MagicType.EarthWave)
+            return true;
+        if (atk == MagicType.EarthWave && def == MagicType.WaterWave)
+            return true;
+        return false;
+    }
+
+    public static bool IsGenerate(MagicType atk, MagicType def)
+    {
+        if (atk == MagicType.GrassWave && def == MagicType.FireWave)
+            return true;
+        if (atk == MagicType.FireWave && def == MagicType.EarthWave)
+            return true;
+        if(atk == MagicType.EarthWave && def == MagicType.MetalWave)
+            return true;
+        if (atk == MagicType.MetalWave && def == MagicType.WaterWave)
+            return true;
+        if (atk == MagicType.WaterWave && def == MagicType.GrassWave)
+            return true;
+        return false;
     }
 
     public static bool SameColor(Color color1, Color color2)

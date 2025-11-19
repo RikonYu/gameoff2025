@@ -1,13 +1,16 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Tilemaps;
 
 public class PlayerController : MonoBehaviour, IAbsorbable
 {
     public float Speed;
+    public float MaxVSpeed;
     public float MaxHP;
     public float currentHP;
     public float MagicCD;
+    bool isOnGround = false;
     public MagicType CurrentTyp;
     float cooldown;
     Rigidbody2D rb;
@@ -15,6 +18,7 @@ public class PlayerController : MonoBehaviour, IAbsorbable
     // Start is called before the first frame update
     void Start()
     {
+        BattleController.instance.MC = this.gameObject;
         rb = GetComponent<Rigidbody2D>();
         spr = transform.Find("Sprite").gameObject;
         currentHP = MaxHP;
@@ -65,5 +69,37 @@ public class PlayerController : MonoBehaviour, IAbsorbable
     public void OnHit()
     {
         dmgCnt++;
+    }
+    private float verticalThreshold = 0.7f;
+    private float probeDepth = 0.01f;
+
+    private void FixedUpdate()
+    {
+        isOnGround = false;
+    }
+
+    private void OnCollisionStay2D(Collision2D collision)
+    {
+        Tilemap tilemap = collision.gameObject.GetComponent<Tilemap>();
+        if (tilemap == null) return;
+
+        foreach (ContactPoint2D contact in collision.contacts)
+        {
+            if (contact.normal.y > verticalThreshold)
+            {
+                Vector3 hitPosition = Vector3.zero;
+                hitPosition.x = contact.point.x - contact.normal.x * probeDepth;
+                hitPosition.y = contact.point.y - contact.normal.y * probeDepth;
+
+                Vector3Int cellPosition = tilemap.WorldToCell(hitPosition);
+                TileBase tile = tilemap.GetTile(cellPosition);
+
+                if (tile is GroundTile)
+                {
+                    isOnGround = true;
+                    return;
+                }
+            }
+        }
     }
 }

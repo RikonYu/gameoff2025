@@ -13,6 +13,7 @@ public class MagicController : MonoBehaviour
     public ParticleSystem ps;
     ParticleSystem.MainModule psMain;
     ParticleSystem.ShapeModule psShape;
+    ParticleSystem.TrailModule psTrails;
 
     [Header("Layer Settings")]
     public LayerMask TerrainLayer;
@@ -43,7 +44,8 @@ public class MagicController : MonoBehaviour
 
         psMain = ps.main;
         psShape = ps.shape;
-    
+        psTrails = ps.trails;
+
         psMain.startSpeed = MoveSpeed;
         psMain.startLifetime = Consts.WaveLifetime;
 
@@ -64,7 +66,9 @@ public class MagicController : MonoBehaviour
     {
         this.transform.position = pos;
         this.Typ = typ;
-        psMain.startColor = Consts.ElementColors[typ];
+
+        var baseColorMinMax = Consts.ElementColors[typ];
+        psMain.startColor = baseColorMinMax;
 
         psMain.maxParticles = degree * Consts.ParticlePerDegree;
         ParticleSystem.Burst firstBurst = ps.emission.GetBurst(0);
@@ -75,6 +79,31 @@ public class MagicController : MonoBehaviour
         this.isAlly = isAlly;
         this.isEnemy = isEnemy;
         this.sourceCaster = source;
+
+        psTrails.enabled = true;
+        float trailAlpha = 0.33f;
+        psTrails.mode = ParticleSystemTrailMode.PerParticle; 
+        psTrails.lifetime = new ParticleSystem.MinMaxCurve(0.1f);
+
+        if (this.isEnemy)
+        {
+            Color purple;
+            if (ColorUtility.TryParseHtmlString("#7a367b", out purple))
+            {
+                Color targetColor = baseColorMinMax;
+                purple.a = trailAlpha;
+                Gradient gradient = new Gradient();
+                gradient.SetKeys(
+                    new GradientColorKey[] { new GradientColorKey(purple, 0.0f), new GradientColorKey(targetColor, 1.0f) },
+                    new GradientAlphaKey[] { new GradientAlphaKey(trailAlpha, 0.0f), new GradientAlphaKey(trailAlpha, 1.0f) }
+                );
+                psTrails.colorOverLifetime = gradient;
+            }
+        }
+        else
+        {
+            psTrails.colorOverLifetime = baseColorMinMax;
+        }
 
         magicHitsThisFrame.Clear();
         isstopped = false;
@@ -113,9 +142,9 @@ public class MagicController : MonoBehaviour
     bool once = false;
     void StopParticles()
     {
-/*        if (isstopped) return;
-        isstopped = true;
-        once = true;*/
+        /* if (isstopped) return;
+                isstopped = true;
+                once = true;*/
     }
 
     void LateUpdate()
@@ -211,9 +240,12 @@ public class MagicController : MonoBehaviour
 
             if (((1 << hitLayer) & TerrainLayer.value) != 0)
             {
-                if (!particlesHitTerrain.Contains(p.randomSeed))
+                if (this.Typ != MagicType.EarthWave)
                 {
-                    particlesHitTerrain.Add(p.randomSeed);
+                    if (!particlesHitTerrain.Contains(p.randomSeed))
+                    {
+                        particlesHitTerrain.Add(p.randomSeed);
+                    }
                 }
             }
             else

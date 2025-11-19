@@ -22,7 +22,6 @@ public class UIController : MonoBehaviour
         pin.SetActive(Input.GetMouseButton(2));
         if(Input.GetMouseButton(2))
         {
-            print(Input.GetAxis("Mouse ScrollWheel"));
             wheel.transform.Rotate(Vector3.forward * WheelSpeed * Input.GetAxis("Mouse ScrollWheel") * Time.deltaTime);
             
         }
