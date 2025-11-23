@@ -22,19 +22,6 @@ public class WaveMagic : MonoBehaviour
     {
         int numEnter = ps.GetTriggerParticles(ParticleSystemTriggerEventType.Enter, enterParticles, out var enterColliderData);
 
-        for (int i = 0; i < numEnter; i++)
-        {
-            var targetCollider = enterColliderData.GetCollider(i, 0);
-
-            if (targetCollider != null)
-            {
-                PlayerController target = targetCollider.GetComponent<PlayerController>();
-
-                if (target != null)
-                {
-                    target.OnHit();
-                }
-            }
-        }
+        
     }
 }

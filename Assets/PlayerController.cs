@@ -11,38 +11,63 @@ public class PlayerController : MonoBehaviour, IAbsorbable
     public float currentHP;
     public float MagicCD;
     bool isOnGround = false;
-    public MagicType CurrentTyp;
+    public MagicType MyElement;
     float cooldown;
     Rigidbody2D rb;
+    SpriteRenderer elementSpr;
     GameObject spr;
     // Start is called before the first frame update
     void Start()
     {
         BattleController.instance.MC = this.gameObject;
+        MyElement = BattleController.instance.CurrentMagic;
         rb = GetComponent<Rigidbody2D>();
         spr = transform.Find("Sprite").gameObject;
+        elementSpr = transform.Find("Element").gameObject.GetComponent<SpriteRenderer>();
         currentHP = MaxHP;
         cooldown = 0f;
+        OnChangeType();
     }
-
-    public void OnParticleAbsorbed(MagicType type)
+    void OnChangeType()
     {
+        elementSpr.color = Consts.ElementColors[MyElement];
 
+        elementSpr.color = new Color(elementSpr.color.r, elementSpr.color.g, elementSpr.color.b, 0.33f);
+    }
+    public void OnParticleAbsorbed(MagicType type,int cnt)
+    {
+        if(Utils.IsCounter(type,this.MyElement))
+        {
+            this.currentHP -= cnt *2;
+            if (this.currentHP <= 0)
+                Die();
+        }
+        else if (Utils.IsGenerate(type, this.MyElement))
+        {
+            this.currentHP += cnt;
+            if (this.currentHP >= this.MaxHP)
+                this.currentHP = this.MaxHP;
+        }
     }
 
     // Update is called once per frame
     void Update()
     {
-        currentHP -= dmgCnt;
         cooldown -= Time.deltaTime;
-        dmgCnt = 0;
         Vector2 spd = Vector2.zero;
         if (Input.GetKey(KeyCode.A))
             spd += Vector2.left;
         else if (Input.GetKey(KeyCode.D))
             spd += Vector2.right;
         spd *= Speed;
-        if (spd.x < 0)
+
+
+        if (Input.GetKey(KeyCode.Space) && isOnGround)
+        {
+            rb.velocity = new Vector2(rb.velocity.x, Consts.JumpSpeed);
+        }
+
+            if (spd.x < 0)
             spr.GetComponent<SpriteRenderer>().flipX = false;
         else if(spd.x>0)
             spr.GetComponent<SpriteRenderer>().flipX = true;
@@ -50,6 +75,7 @@ public class PlayerController : MonoBehaviour, IAbsorbable
             spr.GetComponent<Animator>().SetBool("isWalking", true);
         else
             spr.GetComponent<Animator>().SetBool("isWalking", false);
+
 
         rb.velocity = spd + Vector2.up * rb.velocity.y;
         if(Input.GetMouseButton(0))
@@ -60,15 +86,12 @@ public class PlayerController : MonoBehaviour, IAbsorbable
                 var magic = Instantiate(BattleController.instance.MagicWave);
                 var pos = Camera.main.ScreenToWorldPoint(Input.mousePosition, 0f);
                 Quaternion direction = Quaternion.Euler(0f, 0f, Mathf.Atan2(pos.y, pos.x) * Mathf.Rad2Deg-90);
-                magic.GetComponent<MagicController>().Init(this.transform.position, direction, BattleController.instance.CurrentMagic, 90, true, false, this.gameObject);
+                MyElement = BattleController.instance.CurrentMagic;
+
+                OnChangeType();
+                magic.GetComponent<MagicController>().Init(this.transform.position, direction, BattleController.instance.CurrentMagic, 90, true, this.gameObject);
             }
         }
-    }
-
-    int dmgCnt;
-    public void OnHit()
-    {
-        dmgCnt++;
     }
     private float verticalThreshold = 0.7f;
     private float probeDepth = 0.01f;
@@ -101,5 +124,9 @@ public class PlayerController : MonoBehaviour, IAbsorbable
                 }
             }
         }
+    }
+    public void Die()
+    {
+
     }
 }

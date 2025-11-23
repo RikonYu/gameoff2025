@@ -13,10 +13,12 @@ public enum MagicType
 public class Consts
 {
     public static float CameraSize = 15f;
+    public static float JumpSpeed=40f;
     public static float maxHeight = 50f;
     public static float WaveLifetime = 3f;
     public static int ParticlePerDegree = 20;
     public static float InitialJumpSpeed;
+    public static Vector3 GamePos = new Vector3(-6, -10, 0);
     public static Dictionary<MagicType, Color> ElementColors = new Dictionary<MagicType, Color>()
     {
         {MagicType.WaterWave, new Color(0.31f, 0.561f, 0.729f) },
@@ -29,5 +31,5 @@ public class Consts
 
 public interface IAbsorbable
 {
-    public void OnParticleAbsorbed(MagicType type);
+    public void OnParticleAbsorbed(MagicType type, int cnt);
 }

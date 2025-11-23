@@ -11,19 +11,19 @@ public class EnvObj : MonoBehaviour, IAbsorbable
         spr = GetComponent<SpriteRenderer>();
     }
 
-    public virtual void OnParticleAbsorbed(MagicType type)
+    public virtual void OnParticleAbsorbed(MagicType type, int cnt)
     {
 
     }
 
-    public virtual void Absorb(MagicType typ, int cnt)
+    public virtual void Absorb(MagicType typ, int cnt, bool isEnemy)
     {
 
     }
-    public virtual void OnBlast(Vector2 pos, Quaternion direction, bool isCircle)
+    public virtual void OnBlast(Vector2 pos, Quaternion direction, bool isCircle, bool isEnemy)
     {
         var magic = Instantiate(BattleController.instance.MagicWave);
-        magic.GetComponent<MagicController>().Init(pos, direction, Typ, isCircle ? 360 : 90, false, false, this.gameObject);
+        magic.GetComponent<MagicController>().Init(pos, direction, Typ, isCircle ? 360 : 90, !isEnemy, this.gameObject);
     }
     public virtual bool CanAbsorb(MagicType typ)
     {

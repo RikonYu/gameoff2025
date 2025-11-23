@@ -8,7 +8,10 @@ public class BattleController : MonoBehaviour
     public GameObject MagicWave;
     public GameObject LeftWall, RightWall;
     public GameObject MC;
+    public static bool IsTutorial=true;
     public MagicType CurrentMagic;
+
+    public GameObject LeftBlack, RightBlack, Boss;
     // Start is called before the first frame update
     void Start()
     {
@@ -21,12 +24,22 @@ public class BattleController : MonoBehaviour
         RightWall.GetComponent<SpriteRenderer>().size = new Vector2(1f, Consts.maxHeight);
         LeftWall.GetComponent<BoxCollider2D>().size = new Vector2(1f, Consts.maxHeight);
         RightWall.GetComponent<BoxCollider2D>().size = new Vector2(1f, Consts.maxHeight);
-
+        if (!IsTutorial)
+            SwitchScene();
     }
 
     // Update is called once per frame
     void Update()
     {
         
+    }
+
+    public void SwitchScene()
+    {
+        MC.transform.position = Consts.GamePos;
+        IsTutorial = false;
+        LeftBlack.SetActive(true);
+        RightBlack.SetActive(false);
+        Boss.SetActive(true);
     }
 }

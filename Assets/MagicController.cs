@@ -22,17 +22,23 @@ public class MagicController : MonoBehaviour
     public LayerMask EnvTriggerLayer;
     public LayerMask MagicInteractionLayer;
 
-    private List<ParticleSystem.Particle> triggerParticles;
     private ParticleSystem.Particle[] allParticles;
 
     private GameObject sourceCaster;
-    bool isAlly, isEnemy;
+
+    bool isEnemy;
 
     private Dictionary<MagicController, int> magicHitsThisFrame;
-    private static HashSet<long> interactionsProcessedThisFrame;
+    private Dictionary<EnvObj, int> envHitsThisFrame;
+    private Dictionary<EnvObj, bool> tempAbsorbCache;
 
+    private Dictionary<IAbsorbable, int> absorbableHitsThisFrame;
+    private Dictionary<IAbsorbable, bool> absorbableCheckCache;
+
+    private static HashSet<long> interactionsProcessedThisFrame;
     private HashSet<uint> particlesHitTerrain;
     private Dictionary<uint, ParticleSystem.Particle> previousParticles;
+    private Collider2D[] m_HitBuffer = new Collider2D[16];
 
     void Awake()
     {
@@ -49,22 +55,41 @@ public class MagicController : MonoBehaviour
         psMain.startSpeed = MoveSpeed;
         psMain.startLifetime = Consts.WaveLifetime;
 
-        triggerParticles = new List<ParticleSystem.Particle>();
         allParticles = new ParticleSystem.Particle[psMain.maxParticles];
 
         particlesHitTerrain = new HashSet<uint>();
         previousParticles = new Dictionary<uint, ParticleSystem.Particle>();
 
         magicHitsThisFrame = new Dictionary<MagicController, int>();
+        envHitsThisFrame = new Dictionary<EnvObj, int>();
+        tempAbsorbCache = new Dictionary<EnvObj, bool>();
+
+        absorbableHitsThisFrame = new Dictionary<IAbsorbable, int>();
+        absorbableCheckCache = new Dictionary<IAbsorbable, bool>();
+
         if (interactionsProcessedThisFrame == null)
         {
             interactionsProcessedThisFrame = new HashSet<long>();
         }
     }
 
-    public void Init(Vector2 pos, Quaternion direction, MagicType typ, int degree, bool isAlly, bool isEnemy, GameObject source)
+    public void Init(Vector2 pos, Quaternion direction, MagicType typ, int degree, bool isEnemy, GameObject source)
     {
-        this.transform.position = pos;
+        Vector2 finalPos = pos;
+        if (source != null)
+        {
+            Vector2 sourcePos = source.transform.position;
+            float dist = Vector2.Distance(sourcePos, pos);
+            if (dist > 0)
+            {
+                RaycastHit2D hit = Physics2D.Raycast(sourcePos, (pos - sourcePos).normalized, dist, TerrainLayer);
+                if (hit.collider != null)
+                {
+                    finalPos = hit.point + (hit.normal * 0.1f);
+                }
+            }
+        }
+        this.transform.position = finalPos;
         this.Typ = typ;
 
         var baseColorMinMax = Consts.ElementColors[typ];
@@ -74,38 +99,62 @@ public class MagicController : MonoBehaviour
         ParticleSystem.Burst firstBurst = ps.emission.GetBurst(0);
         firstBurst.count = psMain.maxParticles;
         ps.emission.SetBurst(0, firstBurst);
+
         this.SetDegree(degree);
         gameObject.transform.rotation = direction;
-        this.isAlly = isAlly;
+
         this.isEnemy = isEnemy;
         this.sourceCaster = source;
 
         psTrails.enabled = true;
-        float trailAlpha = 0.33f;
-        psTrails.mode = ParticleSystemTrailMode.PerParticle; 
+        psTrails.mode = ParticleSystemTrailMode.PerParticle;
         psTrails.lifetime = new ParticleSystem.MinMaxCurve(0.1f);
+
+        AnimationCurve widthCurve = new AnimationCurve();
+        widthCurve.AddKey(new Keyframe(0.0f, 0.0f));
+        widthCurve.AddKey(new Keyframe(1.0f, 1.0f));
+        psTrails.widthOverTrail = new ParticleSystem.MinMaxCurve(0.5f, widthCurve);
+
+        float alphaHead = 0.3f;
+        float alphaTail = 0.0f;
+
+        Gradient gradient = new Gradient();
+        Color mainColor = baseColorMinMax;
 
         if (this.isEnemy)
         {
             Color purple;
             if (ColorUtility.TryParseHtmlString("#7a367b", out purple))
             {
-                Color targetColor = baseColorMinMax;
-                purple.a = trailAlpha;
-                Gradient gradient = new Gradient();
                 gradient.SetKeys(
-                    new GradientColorKey[] { new GradientColorKey(purple, 0.0f), new GradientColorKey(targetColor, 1.0f) },
-                    new GradientAlphaKey[] { new GradientAlphaKey(trailAlpha, 0.0f), new GradientAlphaKey(trailAlpha, 1.0f) }
+                    new GradientColorKey[] { new GradientColorKey(purple, 0.0f), new GradientColorKey(mainColor, 1.0f) },
+                    new GradientAlphaKey[] { new GradientAlphaKey(alphaTail, 0.0f), new GradientAlphaKey(alphaHead, 1.0f) }
                 );
-                psTrails.colorOverLifetime = gradient;
+            }
+            else
+            {
+                gradient.SetKeys(
+                    new GradientColorKey[] { new GradientColorKey(mainColor, 0.0f), new GradientColorKey(mainColor, 1.0f) },
+                    new GradientAlphaKey[] { new GradientAlphaKey(alphaTail, 0.0f), new GradientAlphaKey(alphaHead, 1.0f) }
+                );
             }
         }
         else
         {
-            psTrails.colorOverLifetime = baseColorMinMax;
+            gradient.SetKeys(
+                new GradientColorKey[] { new GradientColorKey(mainColor, 0.0f), new GradientColorKey(mainColor, 1.0f) },
+                new GradientAlphaKey[] { new GradientAlphaKey(alphaTail, 0.0f), new GradientAlphaKey(alphaHead, 1.0f) }
+            );
         }
+        psTrails.colorOverTrail = gradient;
 
         magicHitsThisFrame.Clear();
+        envHitsThisFrame.Clear();
+        tempAbsorbCache.Clear();
+
+        absorbableHitsThisFrame.Clear();
+        absorbableCheckCache.Clear();
+
         isstopped = false;
         lifetime = 0f;
 
@@ -120,6 +169,13 @@ public class MagicController : MonoBehaviour
         {
             allParticles = new ParticleSystem.Particle[psMain.maxParticles];
         }
+        if (degree == 360)
+        {
+            psShape.shapeType = ParticleSystemShapeType.Circle;
+            psShape.arc = 360f;
+            psShape.radiusThickness = 0f;
+        }
+
         psShape.angle = degree / 2;
     }
 
@@ -142,26 +198,43 @@ public class MagicController : MonoBehaviour
     bool once = false;
     void StopParticles()
     {
-        /* if (isstopped) return;
-                isstopped = true;
-                once = true;*/
     }
 
     void LateUpdate()
     {
+        if (ps == null) return;
+
+        if (allParticles == null || allParticles.Length < ps.main.maxParticles)
+        {
+            allParticles = new ParticleSystem.Particle[ps.main.maxParticles];
+        }
+
         int numParticlesAlive = ps.GetParticles(allParticles);
         bool particlesModified = false;
         float dt = Time.deltaTime;
 
+        int envLayerIndex = LayerMask.NameToLayer("EnvTrigger");
+        int envLayerMask = (envLayerIndex != -1) ? (1 << envLayerIndex) : 0;
+        int targetLayers = TerrainLayer.value | MagicInteractionLayer.value | envLayerMask;
+
+        bool isLocalSpace = ps.main.simulationSpace == ParticleSystemSimulationSpace.Local;
+        Matrix4x4 localToWorld = ps.transform.localToWorldMatrix;
+
         var currentFrameParticles = new Dictionary<uint, ParticleSystem.Particle>(numParticlesAlive);
+
+        envHitsThisFrame.Clear();
+        magicHitsThisFrame.Clear();
+        tempAbsorbCache.Clear();
+
+        absorbableHitsThisFrame.Clear();
+        absorbableCheckCache.Clear();
 
         for (int i = 0; i < numParticlesAlive; i++)
         {
-            ParticleSystem.Particle p = allParticles[i];
-            if (p.remainingLifetime == 0) continue;
+            ref ParticleSystem.Particle p = ref allParticles[i];
+            if (p.remainingLifetime <= 0) continue;
 
             currentFrameParticles[p.randomSeed] = p;
-
             if (previousParticles.TryGetValue(p.randomSeed, out var prevP))
             {
                 float distanceSq = (p.position - prevP.position).sqrMagnitude;
@@ -170,132 +243,169 @@ public class MagicController : MonoBehaviour
 
                 if (distanceSq > allowedDistanceSq)
                 {
-                    allParticles[i].remainingLifetime = 0;
+                    p.remainingLifetime = 0;
                     particlesModified = true;
+                    continue;
+                }
+            }
+
+            Vector2 worldPos = isLocalSpace ? localToWorld.MultiplyPoint3x4(p.position) : p.position;
+            float checkRadius = p.GetCurrentSize(ps) * 0.5f;
+
+            int numHits = Physics2D.OverlapCircleNonAlloc(worldPos, checkRadius, m_HitBuffer, targetLayers);
+            bool particleKilled = false;
+            bool hitTerrainThisFrame = false;
+
+            for (int j = 0; j < numHits; j++)
+            {
+                Collider2D hitCol = m_HitBuffer[j];
+                int hitLayer = hitCol.gameObject.layer;
+
+                EnvObj envObj = hitCol.GetComponentInParent<EnvObj>();
+                if (envObj != null)
+                {
+                    bool canAbsorb;
+                    if (!tempAbsorbCache.TryGetValue(envObj, out canAbsorb))
+                    {
+                        canAbsorb = envObj.CanAbsorb(this.Typ);
+                        tempAbsorbCache[envObj] = canAbsorb;
+                    }
+
+                    if (canAbsorb)
+                    {
+                        if (!envHitsThisFrame.ContainsKey(envObj))
+                        {
+                            envHitsThisFrame[envObj] = 0;
+                        }
+                        envHitsThisFrame[envObj]++;
+
+                        p.remainingLifetime = 0;
+                        particleKilled = true;
+                        break;
+                    }
+                }
+
+                if (((1 << hitLayer) & TerrainLayer.value) != 0)
+                {
+                    if ((psMain.startLifetime.constant - p.remainingLifetime) < 0.15f)
+                    {
+                        p.remainingLifetime = 0;
+                        particleKilled = true;
+                        break;
+                    }
+
+                    if (this.Typ != MagicType.EarthWave)
+                    {
+                        if (!particlesHitTerrain.Contains(p.randomSeed))
+                        {
+                            particlesHitTerrain.Add(p.randomSeed);
+                        }
+                        hitTerrainThisFrame = true;
+                    }
+                }
+                else if (!hitTerrainThisFrame)
+                {
+                    IAbsorbable absorbable = hitCol.GetComponent<IAbsorbable>();
+
+                    if (absorbable != null)
+                    {
+                        bool canAbsorbGeneric;
+                        if (!absorbableCheckCache.TryGetValue(absorbable, out canAbsorbGeneric))
+                        {
+                            if (this.sourceCaster != null)
+                            {
+                                canAbsorbGeneric = Utils.CanAbsorb(this.Typ, this.sourceCaster, hitCol.gameObject);
+                            }
+                            else
+                            {
+                                canAbsorbGeneric = false;
+                            }
+                            absorbableCheckCache[absorbable] = canAbsorbGeneric;
+                        }
+
+                        if (canAbsorbGeneric)
+                        {
+                            if (!absorbableHitsThisFrame.ContainsKey(absorbable))
+                            {
+                                absorbableHitsThisFrame[absorbable] = 0;
+                            }
+                            absorbableHitsThisFrame[absorbable]++;
+
+                            p.remainingLifetime = 0;
+                            particleKilled = true;
+                            break;
+                        }
+                    }
+
+                    if (((1 << hitLayer) & MagicInteractionLayer.value) != 0)
+                    {
+                        MagicController otherMagic = hitCol.GetComponent<MagicController>();
+                        if (otherMagic != null && otherMagic != this)
+                        {
+                            if (!magicHitsThisFrame.ContainsKey(otherMagic))
+                            {
+                                magicHitsThisFrame[otherMagic] = 0;
+                            }
+                            magicHitsThisFrame[otherMagic]++;
+
+                            p.remainingLifetime = 0;
+                            particleKilled = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (particleKilled)
+            {
+                particlesModified = true;
+                continue;
+            }
+
+            bool hitTerrainHistory = particlesHitTerrain.Contains(p.randomSeed);
+
+            if (once)
+            {
+                if (!hitTerrainHistory)
+                {
+                    p.velocity = this.transform.up * MoveSpeed;
                 }
             }
         }
+
         previousParticles = currentFrameParticles;
-
-
-        if (once)
-        {
-            once = false;
-            for (int i = 0; i < numParticlesAlive; i++)
-            {
-                if (allParticles[i].remainingLifetime == 0) continue;
-
-                if (particlesHitTerrain.Contains(allParticles[i].randomSeed))
-                {
-                    Vector3 vel = allParticles[i].velocity;
-                    allParticles[i].velocity = vel;
-                }
-                else
-                {
-                    allParticles[i].velocity = this.transform.up * MoveSpeed;
-                }
-            }
-            particlesModified = true;
-        }
-        else if (isstopped)
-        {
-            for (int i = 0; i < numParticlesAlive; i++)
-            {
-                if (allParticles[i].remainingLifetime == 0) continue;
-
-                if (particlesHitTerrain.Contains(allParticles[i].randomSeed))
-                {
-                    Vector3 vel = allParticles[i].velocity;
-                    allParticles[i].velocity = vel;
-                    particlesModified = true;
-                }
-            }
-        }
+        if (once) once = false;
 
         if (particlesModified)
         {
             ps.SetParticles(allParticles, numParticlesAlive);
         }
 
+        foreach (var kvp in envHitsThisFrame)
+        {
+            EnvObj target = kvp.Key;
+            int count = kvp.Value;
+            if (target != null)
+            {
+                target.Absorb(this.Typ, count, this.isEnemy);
+            }
+        }
+
+        foreach (var kvp in absorbableHitsThisFrame)
+        {
+            IAbsorbable target = kvp.Key;
+            int count = kvp.Value;
+
+            if (target != null && !target.Equals(null))
+            {
+                target.OnParticleAbsorbed(this.Typ, count);
+            }
+        }
+
         ProcessMagicInteractions();
-        magicHitsThisFrame.Clear();
     }
 
-    void OnParticleCollision(GameObject other)
-    {
-    }
-
-    void OnParticleTrigger()
-    {
-        int numEnter = ps.GetTriggerParticles(ParticleSystemTriggerEventType.Enter, triggerParticles, out var enterColliderData);
-        bool particlesModified = false;
-
-        for (int i = 0; i < numEnter; i++)
-        {
-            ParticleSystem.Particle p = triggerParticles[i];
-            if (p.remainingLifetime == 0) continue;
-
-            Component hitComponent = enterColliderData.GetCollider(i, 0);
-            int hitLayer = hitComponent.gameObject.layer;
-
-            if (((1 << hitLayer) & TerrainLayer.value) != 0)
-            {
-                if (this.Typ != MagicType.EarthWave)
-                {
-                    if (!particlesHitTerrain.Contains(p.randomSeed))
-                    {
-                        particlesHitTerrain.Add(p.randomSeed);
-                    }
-                }
-            }
-            else
-            {
-                bool absorbed = CheckAbsorptionLogic(hitComponent);
-                if (absorbed)
-                {
-                    p.remainingLifetime = 0;
-                    particlesModified = true;
-                }
-                else if (((1 << hitLayer) & MagicInteractionLayer.value) != 0)
-                {
-                    MagicController otherMagic = hitComponent.GetComponent<MagicController>();
-                    if (otherMagic != null && otherMagic != this)
-                    {
-                        if (!magicHitsThisFrame.ContainsKey(otherMagic))
-                        {
-                            magicHitsThisFrame[otherMagic] = 0;
-                        }
-                        magicHitsThisFrame[otherMagic]++;
-
-                        p.remainingLifetime = 0;
-                        particlesModified = true;
-                    }
-                }
-            }
-
-            triggerParticles[i] = p;
-        }
-
-        if (particlesModified)
-        {
-            ps.SetTriggerParticles(ParticleSystemTriggerEventType.Enter, triggerParticles);
-        }
-    }
-
-    bool CheckAbsorptionLogic(Component hitComponent)
-    {
-        if (this.sourceCaster == null || hitComponent == null)
-        {
-            return false;
-        }
-        bool canAbsorb = Utils.CanAbsorb(this.Typ, this.sourceCaster, hitComponent.gameObject);
-        if (canAbsorb)
-        {
-            hitComponent.GetComponent<IAbsorbable>()?.OnParticleAbsorbed(this.Typ);
-            return true;
-        }
-        return false;
-    }
+    void OnParticleCollision(GameObject other) { }
 
     void ProcessMagicInteractions()
     {
@@ -371,6 +481,6 @@ public class MagicController : MonoBehaviour
     {
         int id1 = a.GetInstanceID();
         int id2 = b.GetInstanceID();
-        return (id1 < id2 ? id1 : id2) << 32 | (id1 < id2 ? id2 : id1);
+        return (long)(id1 < id2 ? id1 : id2) << 32 | (id1 < id2 ? id2 : id1);
     }
 }
